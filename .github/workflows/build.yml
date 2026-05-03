@@ -1,29 +1,27 @@
-name: Kernel Build (Python2 Fix)
+name: MT6765 Kernel Build
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-
-    container:
-      image: ubuntu:20.04
+    runs-on: ubuntu-20.04
 
     steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
       - name: Install dependencies
         run: |
-          apt update
+          sudo apt update
 
-          DEBIAN_FRONTEND=noninteractive apt install -y \
+          sudo apt install -y \
             git curl zip unzip bc bison flex \
             build-essential ccache \
             libssl-dev libelf-dev \
             python2 python-is-python2 \
-            perl rsync clang lld llvm
-
-      - name: Checkout source
-        uses: actions/checkout@v4
+            perl rsync \
+            clang lld llvm
 
       - name: Clone toolchains
         run: |
@@ -49,6 +47,17 @@ jobs:
 
           export PATH="$(pwd)/gcc64/bin:$(pwd)/gcc32/bin:$PATH"
 
+          # 🔥 FORCE LLVM LINKER (important fix)
+          export LD=ld.lld
+          export LDFLAGS="-fuse-ld=lld"
+          export KBUILD_LDFLAGS="-fuse-ld=lld"
+
+          export AR=llvm-ar
+          export NM=llvm-nm
+          export OBJCOPY=llvm-objcopy
+          export OBJDUMP=llvm-objdump
+          export STRIP=llvm-strip
+
           make O=out ARCH=arm64 2e_defconfig
 
           make -j$(nproc) O=out \
@@ -64,15 +73,37 @@ jobs:
             CROSS_COMPILE=aarch64-linux-android- \
             CROSS_COMPILE_ARM32=arm-linux-androideabi-
 
-      - name: Package
+      - name: Build modules
+        run: |
+          mkdir -p modules
+
+          make -j$(nproc) O=out \
+            ARCH=arm64 \
+            CC=clang \
+            LD=ld.lld \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-android- \
+            CROSS_COMPILE_ARM32=arm-linux-androideabi- \
+            INSTALL_MOD_PATH=../modules \
+            INSTALL_MOD_STRIP=1 \
+            modules_install
+
+      - name: Create AnyKernel zip
         run: |
           DATE=$(date +"%Y%m%d-%H%M")
+
           cp out/arch/arm64/boot/Image.gz-dtb AnyKernel/
+
           cd AnyKernel
           zip -r9 Kernel-${DATE}.zip *
 
-      - name: Upload
+      - name: Upload kernel
         uses: actions/upload-artifact@v4
         with:
-          name: kernel
+          name: MT6765-Kernel
           path: AnyKernel/*.zip

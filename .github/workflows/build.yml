@@ -1,120 +1,81 @@
-name: MT6765 Kernel Build (VDSo FIX)
+name: MT6765 Kernel Build
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout source
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
           sudo apt update
+          sudo apt install -y git curl zip build-essential bc bison flex \
+          libssl-dev libelf-dev python3 python3-pip wget
 
-          sudo apt install -y \
-            git curl zip unzip bc bison flex \
-            build-essential ccache \
-            libssl-dev libelf-dev \
-            perl rsync \
-            clang lld llvm \
-            python3
+      - name: Fix python2 (IMPORTANT FOR MTK)
+        run: |
+          sudo ln -sf $(which python3) /usr/bin/python2
+          python2 --version || true
 
       - name: Clone toolchains
         run: |
-          git clone --depth=1 \
-            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 \
-            gcc64
-
-          git clone --depth=1 \
-            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 \
-            gcc32
-
-          git clone --depth=1 \
-            https://github.com/osm0sis/AnyKernel3.git \
-            AnyKernel
+          git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
+          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 gcc
+          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 gcc32
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AnyKernel
 
       - name: Build kernel
         run: |
+          export KERNEL_DIR=$PWD
           export ARCH=arm64
           export SUBARCH=arm64
 
-          export KBUILD_BUILD_USER=github-actions
-          export KBUILD_BUILD_HOST=github
+          export PATH=$PWD/clang/bin:$PWD/gcc/bin:$PWD/gcc32/bin:$PATH
 
-          # toolchain path (clang first)
-          export PATH="$(pwd)/clang/bin:$(pwd)/gcc64/bin:$(pwd)/gcc32/bin:$PATH"
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export CROSS_COMPILE_ARM32=arm-linux-androideabi-
 
-          # 🔥 FORCE LLVM EVERYTHING (IMPORTANT FIX)
           export CC=clang
+          export LD=ld.lld
           export LLVM=1
           export LLVM_IAS=1
-
-          export LD=ld.lld
-          export AR=llvm-ar
-          export NM=llvm-nm
-          export OBJCOPY=llvm-objcopy
-          export OBJDUMP=llvm-objdump
-          export STRIP=llvm-strip
-
           export LDFLAGS="-fuse-ld=lld"
-          export KBUILD_LDFLAGS="-fuse-ld=lld"
-          export VDSO_LDFLAGS="-fuse-ld=lld"
 
-          # IMPORTANT: avoid system ld completely
-          export PATH="$(pwd)/clang/bin:$PATH"
+          echo "===================="
+          echo "Defconfig"
+          echo "===================="
 
           make O=out ARCH=arm64 2e_defconfig
 
-          make -j$(nproc) O=out \
-            ARCH=arm64 \
-            CC=clang \
-            LLVM=1 \
-            LLVM_IAS=1 \
-            LD=ld.lld \
-            AR=llvm-ar \
-            NM=llvm-nm \
-            OBJCOPY=llvm-objcopy \
-            OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-android- \
-            CROSS_COMPILE_ARM32=arm-linux-androideabi-
+          echo "===================="
+          echo "Build kernel"
+          echo "===================="
 
-      - name: Build modules
+          make -j$(nproc) O=out ARCH=arm64 \
+            CC=clang LLVM=1 LLVM_IAS=1
+
+          echo "===================="
+          echo "Modules"
+          echo "===================="
+
+          make -j$(nproc) O=out ARCH=arm64 modules
+
+      - name: Package AnyKernel
         run: |
-          mkdir -p modules
-
-          make -j$(nproc) O=out \
-            ARCH=arm64 \
-            CC=clang \
-            LLVM=1 \
-            LD=ld.lld \
-            AR=llvm-ar \
-            NM=llvm-nm \
-            OBJCOPY=llvm-objcopy \
-            OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip \
-            CROSS_COMPILE=aarch64-linux-android- \
-            CROSS_COMPILE_ARM32=arm-linux-androideabi- \
-            INSTALL_MOD_PATH=../modules \
-            INSTALL_MOD_STRIP=1 \
-            modules_install
-
-      - name: Create AnyKernel zip
-        run: |
-          DATE=$(date +"%Y%m%d-%H%M")
-
-          cp out/arch/arm64/boot/Image.gz-dtb AnyKernel/
+          cp out/arch/arm64/boot/Image.gz-dtb AnyKernel/ || true
+          cp out/arch/arm64/boot/Image AnyKernel/ || true
 
           cd AnyKernel
-          zip -r9 Kernel-${DATE}.zip *
+          zip -r9 Kernel.zip *
+          cd ..
 
       - name: Upload kernel
         uses: actions/upload-artifact@v4
         with:
-          name: MT6765-Kernel
-          path: AnyKernel/*.zip
+          name: Kernel-MT6765
+          path: AnyKernel/Kernel.zip

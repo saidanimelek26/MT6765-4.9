@@ -19,12 +19,11 @@ jobs:
             git curl zip unzip bc bison flex \
             build-essential ccache \
             libssl-dev libelf-dev \
-            python3 perl rsync
+            python3 perl rsync \
+            clang lld llvm
 
       - name: Clone toolchains
         run: |
-          git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
-
           git clone --depth=1 \
             https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 \
             gcc64
@@ -45,17 +44,19 @@ jobs:
           export KBUILD_BUILD_USER=github-actions
           export KBUILD_BUILD_HOST=github
 
-          export PATH="$(pwd)/clang/bin:$(pwd)/gcc64/bin:$(pwd)/gcc32/bin:$PATH"
-
-          export KBUILD_COMPILER_STRING="$(
-            ./clang/bin/clang --version | head -n 1
-          )"
+          export PATH="$(pwd)/gcc64/bin:$(pwd)/gcc32/bin:$PATH"
 
           make O=out ARCH=arm64 2e_defconfig
 
           make -j$(nproc) O=out \
             ARCH=arm64 \
             CC=clang \
+            LD=ld.lld \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-android- \
             CROSS_COMPILE_ARM32=arm-linux-androideabi-
@@ -67,6 +68,12 @@ jobs:
           make -j$(nproc) O=out \
             ARCH=arm64 \
             CC=clang \
+            LD=ld.lld \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-android- \
             CROSS_COMPILE_ARM32=arm-linux-androideabi- \

@@ -1,4 +1,4 @@
-name: Kernel Build
+name: Android Kernel Build
 
 on:
   workflow_dispatch:
@@ -8,66 +8,84 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout source
-      uses: actions/checkout@v4
+      - name: Checkout source
+        uses: actions/checkout@v4
 
-    - name: Install dependencies
-      run: |
-        sudo apt update
+      - name: Install dependencies
+        run: |
+          sudo apt update
 
-        sudo apt install -y \
-          git curl zip unzip bc bison flex \
-          build-essential ccache \
-          libssl-dev libelf-dev \
-          python3 perl rsync
+          sudo apt install -y \
+            git curl zip unzip bc bison flex \
+            build-essential ccache \
+            libssl-dev libelf-dev \
+            python3 perl rsync
 
-    - name: Clone toolchains
-      run: |
-        git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
+      - name: Clone toolchains
+        run: |
+          git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
 
-        git clone --depth=1 \
-          https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 \
-          gcc64
+          git clone --depth=1 \
+            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 \
+            gcc64
 
-        git clone --depth=1 \
-          https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 \
-          gcc32
+          git clone --depth=1 \
+            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 \
+            gcc32
 
-        git clone --depth=1 \
-          https://github.com/2e-dev/AnyKernel3.git \
-          AnyKernel
+          git clone --depth=1 \
+            https://github.com/osm0sis/AnyKernel3.git \
+            AnyKernel
 
-    - name: Build kernel
-      run: |
-        export ARCH=arm64
-        export SUBARCH=arm64
+      - name: Build kernel
+        run: |
+          export ARCH=arm64
+          export SUBARCH=arm64
 
-        export KBUILD_BUILD_USER=github-actions
-        export KBUILD_BUILD_HOST=github
+          export KBUILD_BUILD_USER=github-actions
+          export KBUILD_BUILD_HOST=github
 
-        export PATH="$(pwd)/clang/bin:$(pwd)/gcc64/bin:$(pwd)/gcc32/bin:$PATH"
+          export PATH="$(pwd)/clang/bin:$(pwd)/gcc64/bin:$(pwd)/gcc32/bin:$PATH"
 
-        make O=out ARCH=arm64 2e_defconfig
+          export KBUILD_COMPILER_STRING="$(
+            ./clang/bin/clang --version | head -n 1
+          )"
 
-        make -j$(nproc) O=out \
-          ARCH=arm64 \
-          CC=clang \
-          CLANG_TRIPLE=aarch64-linux-gnu- \
-          CROSS_COMPILE=aarch64-linux-android- \
-          CROSS_COMPILE_ARM32=arm-linux-androideabi-
+          make O=out ARCH=arm64 2e_defconfig
 
-    - name: Prepare AnyKernel zip
-      run: |
-        DATE=$(date +"%Y%m%d-%H%M")
+          make -j$(nproc) O=out \
+            ARCH=arm64 \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-android- \
+            CROSS_COMPILE_ARM32=arm-linux-androideabi-
 
-        cp out/arch/arm64/boot/Image.gz-dtb AnyKernel/
+      - name: Build modules
+        run: |
+          mkdir -p modules
 
-        cd AnyKernel
+          make -j$(nproc) O=out \
+            ARCH=arm64 \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-android- \
+            CROSS_COMPILE_ARM32=arm-linux-androideabi- \
+            INSTALL_MOD_PATH=../modules \
+            INSTALL_MOD_STRIP=1 \
+            modules_install
 
-        zip -r9 Styx-2e-BETA-${DATE}.zip *
+      - name: Create AnyKernel zip
+        run: |
+          DATE=$(date +"%Y%m%d-%H%M")
 
-    - name: Upload build
-      uses: actions/upload-artifact@v4
-      with:
-        name: Kernel-Build
-        path: AnyKernel/*.zip
+          cp out/arch/arm64/boot/Image.gz-dtb AnyKernel/
+
+          cd AnyKernel
+
+          zip -r9 Kernel-${DATE}.zip *
+
+      - name: Upload kernel zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kernel-Build
+          path: AnyKernel/*.zip

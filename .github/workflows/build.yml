@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
 
     steps:
       - name: Checkout source
@@ -19,11 +19,9 @@ jobs:
             git curl zip unzip bc bison flex \
             build-essential ccache \
             libssl-dev libelf-dev \
-            python3 perl rsync \
-            clang lld llvm \
-            python2
-
-          sudo ln -sf /usr/bin/python2 /usr/bin/python
+            python2 python-is-python2 \
+            perl rsync \
+            clang lld llvm
 
       - name: Clone toolchains
         run: |

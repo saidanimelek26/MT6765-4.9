@@ -20,7 +20,10 @@ jobs:
             build-essential ccache \
             libssl-dev libelf-dev \
             python3 perl rsync \
-            clang lld llvm
+            clang lld llvm \
+            python2
+
+          sudo ln -sf /usr/bin/python2 /usr/bin/python
 
       - name: Clone toolchains
         run: |

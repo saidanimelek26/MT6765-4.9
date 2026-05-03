@@ -1,14 +1,14 @@
-name: MT6765 Kernel Build
+name: MT6765 Kernel Build (Stable Fix)
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout source
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Install dependencies
@@ -19,9 +19,26 @@ jobs:
             git curl zip unzip bc bison flex \
             build-essential ccache \
             libssl-dev libelf-dev \
-            python2 python-is-python2 \
             perl rsync \
-            clang lld llvm
+            clang lld llvm \
+            python3
+
+      - name: Install Python2 manually (IMPORTANT FIX)
+        run: |
+          sudo apt install -y wget
+
+          cd /tmp
+          wget https://www.python.org/ftp/python/2.7.18/Python-2.7.18.tgz
+
+          tar -xvf Python-2.7.18.tgz
+          cd Python-2.7.18
+
+          ./configure --prefix=/usr/local/python2
+          make -j$(nproc)
+          sudo make install
+
+          sudo ln -sf /usr/local/python2/bin/python2 /usr/bin/python2
+          sudo ln -sf /usr/bin/python2 /usr/bin/python
 
       - name: Clone toolchains
         run: |
@@ -47,7 +64,7 @@ jobs:
 
           export PATH="$(pwd)/gcc64/bin:$(pwd)/gcc32/bin:$PATH"
 
-          # 🔥 FORCE LLVM LINKER (important fix)
+          # FORCE LLVM LINKER FIX
           export LD=ld.lld
           export LDFLAGS="-fuse-ld=lld"
           export KBUILD_LDFLAGS="-fuse-ld=lld"
@@ -73,27 +90,7 @@ jobs:
             CROSS_COMPILE=aarch64-linux-android- \
             CROSS_COMPILE_ARM32=arm-linux-androideabi-
 
-      - name: Build modules
-        run: |
-          mkdir -p modules
-
-          make -j$(nproc) O=out \
-            ARCH=arm64 \
-            CC=clang \
-            LD=ld.lld \
-            AR=llvm-ar \
-            NM=llvm-nm \
-            OBJCOPY=llvm-objcopy \
-            OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-android- \
-            CROSS_COMPILE_ARM32=arm-linux-androideabi- \
-            INSTALL_MOD_PATH=../modules \
-            INSTALL_MOD_STRIP=1 \
-            modules_install
-
-      - name: Create AnyKernel zip
+      - name: Package
         run: |
           DATE=$(date +"%Y%m%d-%H%M")
 
@@ -102,8 +99,8 @@ jobs:
           cd AnyKernel
           zip -r9 Kernel-${DATE}.zip *
 
-      - name: Upload kernel
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: MT6765-Kernel
+          name: kernel
           path: AnyKernel/*.zip

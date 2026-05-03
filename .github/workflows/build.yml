@@ -1,4 +1,4 @@
-name: MT6765 Kernel Build (Stable Fix)
+name: MT6765 Kernel Build (VDSo FIX)
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout source
         uses: actions/checkout@v4
 
       - name: Install dependencies
@@ -22,23 +22,6 @@ jobs:
             perl rsync \
             clang lld llvm \
             python3
-
-      - name: Install Python2 manually (IMPORTANT FIX)
-        run: |
-          sudo apt install -y wget
-
-          cd /tmp
-          wget https://www.python.org/ftp/python/2.7.18/Python-2.7.18.tgz
-
-          tar -xvf Python-2.7.18.tgz
-          cd Python-2.7.18
-
-          ./configure --prefix=/usr/local/python2
-          make -j$(nproc)
-          sudo make install
-
-          sudo ln -sf /usr/local/python2/bin/python2 /usr/bin/python2
-          sudo ln -sf /usr/bin/python2 /usr/bin/python
 
       - name: Clone toolchains
         run: |
@@ -62,24 +45,35 @@ jobs:
           export KBUILD_BUILD_USER=github-actions
           export KBUILD_BUILD_HOST=github
 
-          export PATH="$(pwd)/gcc64/bin:$(pwd)/gcc32/bin:$PATH"
+          # toolchain path (clang first)
+          export PATH="$(pwd)/clang/bin:$(pwd)/gcc64/bin:$(pwd)/gcc32/bin:$PATH"
 
-          # FORCE LLVM LINKER FIX
+          # 🔥 FORCE LLVM EVERYTHING (IMPORTANT FIX)
+          export CC=clang
+          export LLVM=1
+          export LLVM_IAS=1
+
           export LD=ld.lld
-          export LDFLAGS="-fuse-ld=lld"
-          export KBUILD_LDFLAGS="-fuse-ld=lld"
-
           export AR=llvm-ar
           export NM=llvm-nm
           export OBJCOPY=llvm-objcopy
           export OBJDUMP=llvm-objdump
           export STRIP=llvm-strip
 
+          export LDFLAGS="-fuse-ld=lld"
+          export KBUILD_LDFLAGS="-fuse-ld=lld"
+          export VDSO_LDFLAGS="-fuse-ld=lld"
+
+          # IMPORTANT: avoid system ld completely
+          export PATH="$(pwd)/clang/bin:$PATH"
+
           make O=out ARCH=arm64 2e_defconfig
 
           make -j$(nproc) O=out \
             ARCH=arm64 \
             CC=clang \
+            LLVM=1 \
+            LLVM_IAS=1 \
             LD=ld.lld \
             AR=llvm-ar \
             NM=llvm-nm \
@@ -90,7 +84,27 @@ jobs:
             CROSS_COMPILE=aarch64-linux-android- \
             CROSS_COMPILE_ARM32=arm-linux-androideabi-
 
-      - name: Package
+      - name: Build modules
+        run: |
+          mkdir -p modules
+
+          make -j$(nproc) O=out \
+            ARCH=arm64 \
+            CC=clang \
+            LLVM=1 \
+            LD=ld.lld \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
+            CROSS_COMPILE=aarch64-linux-android- \
+            CROSS_COMPILE_ARM32=arm-linux-androideabi- \
+            INSTALL_MOD_PATH=../modules \
+            INSTALL_MOD_STRIP=1 \
+            modules_install
+
+      - name: Create AnyKernel zip
         run: |
           DATE=$(date +"%Y%m%d-%H%M")
 
@@ -99,8 +113,8 @@ jobs:
           cd AnyKernel
           zip -r9 Kernel-${DATE}.zip *
 
-      - name: Upload
+      - name: Upload kernel
         uses: actions/upload-artifact@v4
         with:
-          name: kernel
+          name: MT6765-Kernel
           path: AnyKernel/*.zip
